@@ -24,9 +24,16 @@
             </div>
         </div>
         
-        <div class="search-bar" style="max-width: 400px; margin: 0 2rem;">
+        <div class="search-bar" style="max-width: 400px; margin: 0 1rem;">
             <i class="fas fa-search"></i>
             <input type="text" id="productSearch" placeholder="Search products (F4)..." autocomplete="off">
+        </div>
+
+        <div class="currency-selector" style="margin-right: 1rem;">
+            <select id="currencySelect" class="currency-dropdown">
+                <option value="USD">USD ($)</option>
+                <option value="PKR">PKR (₨)</option>
+            </select>
         </div>
 
         <div class="bill-info">
@@ -121,7 +128,7 @@
                     <span data-value="discount">-$0.00</span>
                 </div>
                 <div class="summary-row">
-                    <span>Tax (5%)</span>
+                    <span id="taxLabel">Tax (0%)</span>
                     <span data-value="tax">$0.00</span>
                 </div>
                 <div class="summary-row total">
@@ -231,6 +238,10 @@
                     <i class="fas fa-tag"></i>
                     <span>Discount</span>
                 </button>
+                <button class="modal-btn" onclick="pos.toggleTaxSection()">
+                    <i class="fas fa-percentage"></i>
+                    <span>Tax</span>
+                </button>
                 <a href="{{ route('dashboard') }}" class="modal-btn" style="text-decoration: none; grid-column: 1 / -1; justify-content: center; background: var(--bg-gray);">
                     <i class="fas fa-home"></i>
                     <span>Back to Dashboard</span>
@@ -260,12 +271,30 @@
                 <button class="close-btn" onclick="pos.closeModal(document.getElementById('discountModal'))">&times;</button>
             </div>
             <div class="modal-body">
-                <select id="discountType" class="input-field">
-                    <option value="percentage">Percentage (%)</option>
-                    <option value="fixed">Fixed Amount ($)</option>
-                </select>
-                <input type="number" id="discountValue" placeholder="Enter value" class="input-field">
-                <button onclick="pos.applyDiscount()" class="complete-sale-btn" style="width: 100%;">Apply Discount</button>
+                <div style="margin-bottom: 1rem;">
+                    <label id="discountFixedLabel" style="font-size: 0.75rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; margin-bottom: 0.5rem; display: block;">Fixed Amount Discount (USD)</label>
+                    <input type="number" id="discountFixed" placeholder="Enter fixed amount" class="input-field" value="0">
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; margin-bottom: 0.5rem; display: block;">Percentage Discount (%)</label>
+                    <input type="number" id="discountPercent" placeholder="Enter percentage" class="input-field" value="0">
+                </div>
+                <button onclick="pos.applyDiscount()" class="complete-sale-btn" style="width: 100%;">Apply Discounts</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tax Modal -->
+    <div id="taxModal" class="modal">
+        <div class="modal-content" style="max-width: 350px;">
+            <div class="modal-header">
+                <h3>Adjust Tax</h3>
+                <button class="close-btn" onclick="pos.closeModal(document.getElementById('taxModal'))">&times;</button>
+            </div>
+            <div class="modal-body">
+                <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; margin-bottom: 0.5rem; display: block;">Tax Rate (%)</label>
+                <input type="number" id="taxValue" placeholder="Enter tax percentage" class="input-field" value="0">
+                <button onclick="pos.applyTax()" class="complete-sale-btn" style="width: 100%;">Apply Tax</button>
             </div>
         </div>
     </div>

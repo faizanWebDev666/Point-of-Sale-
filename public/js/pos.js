@@ -3,13 +3,18 @@ class POSSystem {
     constructor() {
         this.cart = [];
         this.subtotal = 0;
-        this.discount = { type: 'percentage', value: 0 };
-        this.taxRate = 0.05;
+        this.discounts = { fixed: 0, percentage: 0 };
+        this.taxRate = 0; // Default to 0%
         this.billNumber = this.generateBillNumber();
         this.checkoutPaymentMethod = 'cash';
         
         // Configuration
-        this.currency = '$';
+        this.currencies = {
+            'USD': { symbol: '$', rate: 1 },
+            'PKR': { symbol: 'Rs', rate: 280 } // Example rate
+        };
+        this.currentCurrency = localStorage.getItem('pos_currency') || 'USD';
+        this.currency = this.currencies[this.currentCurrency].symbol;
         
         this.init();
     }
@@ -20,7 +25,23 @@ class POSSystem {
         this.updateBillNumber();
         this.refreshStockAlerts();
         this.setupKeyboardShortcuts();
+        this.syncCurrencyUI();
         this.renderCart();
+    }
+
+    syncCurrencyUI() {
+        if (this.currencySelect) {
+            this.currencySelect.value = this.currentCurrency;
+        }
+        this.updateDiscountLabel();
+        this.updateUIPrices();
+    }
+
+    updateDiscountLabel() {
+        const label = document.getElementById('discountFixedLabel');
+        if (label) {
+            label.textContent = `Fixed Amount Discount (${this.currentCurrency})`;
+        }
     }
 
     cacheElements() {
@@ -28,6 +49,7 @@ class POSSystem {
         this.productGrid = document.getElementById('productGrid');
         this.cartItemsList = document.getElementById('cartItems');
         this.productSearch = document.getElementById('productSearch');
+        this.currencySelect = document.getElementById('currencySelect');
         this.toastContainer = document.getElementById('toastContainer');
         
         // Modals
@@ -35,6 +57,7 @@ class POSSystem {
         this.moreOptionsModal = document.getElementById('moreOptionsModal');
         this.infoModal = document.getElementById('infoModal');
         this.discountModal = document.getElementById('discountModal');
+        this.taxModal = document.getElementById('taxModal');
         
         // Checkout Elements
         this.checkoutForm = document.getElementById('checkoutForm');
@@ -64,6 +87,9 @@ class POSSystem {
 
         // Search & Filter
         this.productSearch.addEventListener('input', (e) => this.filterProducts(e.target.value));
+        
+        // Currency Selector
+        this.currencySelect.addEventListener('change', (e) => this.switchCurrency(e.target.value));
         
         document.querySelectorAll('.category-tab').forEach(tab => {
             tab.addEventListener('click', () => this.filterByCategory(tab));
@@ -106,6 +132,36 @@ class POSSystem {
                 this.handleBarcodeScan(this.productSearch.value);
             }
         });
+    }
+
+    switchCurrency(currencyCode) {
+        if (!this.currencies[currencyCode]) return;
+        
+        this.currentCurrency = currencyCode;
+        this.currency = this.currencies[currencyCode].symbol;
+        localStorage.setItem('pos_currency', currencyCode);
+        
+        this.updateDiscountLabel();
+        this.updateUIPrices();
+        this.showToast(`Switched to ${currencyCode}`, 'info');
+    }
+
+    updateUIPrices() {
+        // 1. Update Product Grid (from DOM data)
+        document.querySelectorAll('.product-card').forEach(card => {
+            const basePrice = parseFloat(card.dataset.price);
+            const convertedPrice = this.formatPrice(basePrice);
+            card.querySelector('.product-price').textContent = convertedPrice;
+        });
+
+        // 2. Update Cart (re-render uses this.currency)
+        this.renderCart();
+    }
+
+    formatPrice(amount, isBase = true) {
+        const rate = isBase ? this.currencies[this.currentCurrency].rate : 1;
+        const converted = amount * rate;
+        return `${this.currency}${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
 
     async handleBarcodeScan(sku) {
@@ -274,7 +330,7 @@ class POSSystem {
                     </div>
                     <div class="product-info">
                         <div class="product-name">${p.name}</div>
-                        <div class="product-price">${this.currency}${parseFloat(p.price).toFixed(2)}</div>
+                        <div class="product-price">${this.formatPrice(parseFloat(p.price))}</div>
                         <div class="product-stock">Stock: ${p.stock}</div>
                     </div>
                     ${p.stock <= 5 && p.stock > 0 ? '<span class="stock-warning" title="Low Stock"></span>' : ''}
@@ -316,14 +372,15 @@ class POSSystem {
         }
 
         this.subtotal = 0;
-        this.cartItemsList.innerHTML = this.cart.map(item => {
+        this.cartItemsList.innerHTML = this.cart.map((item, index) => {
             const total = item.price * item.qty;
             this.subtotal += total;
             return `
                 <div class="cart-item">
+                    <div class="cart-item-number">${index + 1}</div>
                     <div class="cart-item-info">
                         <div class="cart-item-name">${item.name}</div>
-                        <div class="cart-item-price">${this.currency}${item.price.toFixed(2)}</div>
+                        <div class="cart-item-price">${this.formatPrice(item.price)}</div>
                     </div>
                     <div class="cart-item-controls">
                         <div class="cart-item-qty">
@@ -332,7 +389,7 @@ class POSSystem {
                             <button class="qty-btn" onclick="pos.updateQty('${item.id}', 1)">+</button>
                         </div>
                     </div>
-                    <div class="cart-item-total">${this.currency}${total.toFixed(2)}</div>
+                    <div class="cart-item-total">${this.formatPrice(total)}</div>
                     <button class="remove-item-btn" onclick="pos.removeFromCart('${item.id}')">
                         <i class="fas fa-times"></i>
                     </button>
@@ -345,25 +402,36 @@ class POSSystem {
     }
 
     updateSummary() {
-        let discAmt = 0;
-        if (this.discount.type === 'percentage') {
-            discAmt = (this.subtotal * this.discount.value) / 100;
-        } else {
-            discAmt = this.discount.value;
-        }
-
-        const taxable = Math.max(0, this.subtotal - discAmt);
+        // Calculation Order:
+        // 1. Start with Subtotal
+        // 2. Subtract Fixed Discount
+        // 3. Subtract Percentage Discount (calculated from the amount remaining after fixed discount)
+        // 4. Apply Tax to the final taxable amount
+        
+        const fixedDiscount = this.discounts.fixed || 0;
+        const subtotalAfterFixed = Math.max(0, this.subtotal - fixedDiscount);
+        
+        const percentageDiscount = (subtotalAfterFixed * (this.discounts.percentage || 0)) / 100;
+        const taxable = Math.max(0, subtotalAfterFixed - percentageDiscount);
+        
+        const totalDiscount = fixedDiscount + percentageDiscount;
         const tax = taxable * this.taxRate;
         const total = taxable + tax;
 
-        this.summaryElements.subtotal.textContent = `${this.currency}${this.subtotal.toFixed(2)}`;
-        this.summaryElements.tax.textContent = `${this.currency}${tax.toFixed(2)}`;
-        this.summaryElements.total.textContent = `${this.currency}${total.toFixed(2)}`;
+        // Update tax label
+        const taxLabel = document.getElementById('taxLabel');
+        if (taxLabel) {
+            taxLabel.textContent = `Tax (${(this.taxRate * 100).toFixed(0)}%)`;
+        }
+
+        this.summaryElements.subtotal.textContent = this.formatPrice(this.subtotal);
+        this.summaryElements.tax.textContent = this.formatPrice(tax);
+        this.summaryElements.total.textContent = this.formatPrice(total);
 
         const discRow = document.getElementById('discountRow');
-        if (discAmt > 0) {
+        if (totalDiscount > 0) {
             discRow.style.display = 'flex';
-            this.summaryElements.discount.textContent = `-${this.currency}${discAmt.toFixed(2)}`;
+            this.summaryElements.discount.textContent = `-${this.formatPrice(totalDiscount)}`;
         } else {
             discRow.style.display = 'none';
         }
@@ -372,8 +440,9 @@ class POSSystem {
     // --- Checkout Logic ---
 
     openCheckout() {
-        const total = parseFloat(this.summaryElements.total.textContent.replace(this.currency, ''));
-        this.checkoutTotal.textContent = `${this.currency}${total.toFixed(2)}`;
+        const totalStr = this.summaryElements.total.textContent.replace(this.currency, '').replace(/,/g, '');
+        const total = parseFloat(totalStr);
+        this.checkoutTotal.textContent = this.formatPrice(total, false);
         this.checkoutAmountPaid.value = '';
         this.calculateCheckoutChange();
         this.openModal(this.checkoutModal);
@@ -398,17 +467,17 @@ class POSSystem {
     }
 
     calculateCheckoutChange() {
-        const total = parseFloat(this.checkoutTotal.textContent.replace(this.currency, ''));
+        const total = parseFloat(this.checkoutTotal.textContent.replace(this.currency, '').replace(/,/g, ''));
         const paid = parseFloat(this.checkoutAmountPaid.value) || 0;
         const change = paid - total;
 
         const changeEl = this.checkoutChange;
         if (paid < total && this.checkoutPaymentMethod === 'cash') {
-            changeEl.textContent = 'Short: ' + this.currency + (total - paid).toFixed(2);
+            changeEl.textContent = 'Short: ' + this.formatPrice(total - paid, false);
             changeEl.style.color = 'var(--danger-color)';
             this.checkoutSubmitBtn.disabled = true;
         } else {
-            changeEl.textContent = this.currency + Math.max(0, change).toFixed(2);
+            changeEl.textContent = this.formatPrice(Math.max(0, change), false);
             changeEl.style.color = 'var(--success-color)';
             this.checkoutSubmitBtn.disabled = false;
         }
@@ -417,17 +486,24 @@ class POSSystem {
     async handleCheckoutSubmit(e) {
         e.preventDefault();
         
-        const total = parseFloat(this.checkoutTotal.textContent.replace(this.currency, ''));
+        const totalStr = this.checkoutTotal.textContent.replace(this.currency, '').replace(/,/g, '');
+        const total = parseFloat(totalStr);
         const paid = parseFloat(this.checkoutAmountPaid.value) || total;
+
+        const fixedDiscount = this.discounts.fixed || 0;
+        const subtotalAfterFixed = Math.max(0, this.subtotal - fixedDiscount);
+        const percentageDiscount = (subtotalAfterFixed * (this.discounts.percentage || 0)) / 100;
+        const totalDiscount = fixedDiscount + percentageDiscount;
 
         const saleData = {
             items: this.cart,
             subtotal: this.subtotal,
-            discount_amount: this.calculateDiscountAmount(),
-            tax_amount: parseFloat(this.summaryElements.tax.textContent.replace(this.currency, '')),
-            total_amount: total,
+            discount_amount: totalDiscount,
+            tax_amount: parseFloat(this.summaryElements.tax.textContent.replace(this.currency, '').replace(/,/g, '')) / this.currencies[this.currentCurrency].rate,
+            total_amount: total / this.currencies[this.currentCurrency].rate,
             payment_method: this.checkoutPaymentMethod,
-            amount_paid: paid,
+            amount_paid: paid / this.currencies[this.currentCurrency].rate,
+            currency: this.currentCurrency,
             customer_name: document.getElementById('checkoutCustomerName').value || 'Walk-in Customer',
             customer_phone: document.getElementById('checkoutCustomerPhone').value || null,
         };
@@ -466,22 +542,53 @@ class POSSystem {
 
     toggleDiscountSection() {
         this.closeModal(this.moreOptionsModal);
+        
+        // Convert the internal base (USD) discount to current currency for display
+        const rate = this.currencies[this.currentCurrency].rate;
+        const currentFixed = (this.discounts.fixed || 0) * rate;
+        
+        document.getElementById('discountFixed').value = currentFixed.toFixed(2);
+        document.getElementById('discountPercent').value = this.discounts.percentage || 0;
         this.openModal(this.discountModal);
     }
 
-    applyDiscount() {
-        const type = document.getElementById('discountType').value;
-        const val = parseFloat(document.getElementById('discountValue').value) || 0;
+    toggleTaxSection() {
+        this.closeModal(this.moreOptionsModal);
+        document.getElementById('taxValue').value = (this.taxRate * 100).toFixed(0);
+        this.openModal(this.taxModal);
+    }
 
-        if (type === 'percentage' && val > 100) {
+    applyDiscount() {
+        const enteredFixed = parseFloat(document.getElementById('discountFixed').value) || 0;
+        const percent = parseFloat(document.getElementById('discountPercent').value) || 0;
+
+        if (percent > 100) {
             this.showToast('Invalid percentage', 'warning');
             return;
         }
 
-        this.discount = { type, value: val };
+        // Convert the entered amount from current currency to internal base (USD)
+        const rate = this.currencies[this.currentCurrency].rate;
+        const fixedUSD = enteredFixed / rate;
+
+        this.discounts = { fixed: fixedUSD, percentage: percent };
         this.updateSummary();
         this.closeModal(this.discountModal);
-        this.showToast('Discount applied');
+        this.showToast('Discounts applied');
+    }
+
+    applyTax() {
+        const val = parseFloat(document.getElementById('taxValue').value) || 0;
+
+        if (val < 0) {
+            this.showToast('Invalid tax percentage', 'warning');
+            return;
+        }
+
+        this.taxRate = val / 100;
+        this.updateSummary();
+        this.closeModal(this.taxModal);
+        this.showToast('Tax adjusted');
     }
 
     async showTransactionHistory() {
@@ -612,7 +719,8 @@ class POSSystem {
 
     resetPOS() {
         this.cart = [];
-        this.discount = { type: 'percentage', value: 0 };
+        this.discounts = { fixed: 0, percentage: 0 };
+        this.taxRate = 0;
         this.billNumber = this.generateBillNumber();
         this.updateBillNumber();
         this.renderCart();
@@ -632,13 +740,6 @@ class POSSystem {
 
     updateBillNumber() {
         document.getElementById('billNumber').textContent = 'Bill #' + this.billNumber;
-    }
-
-    calculateDiscountAmount() {
-        if (this.discount.type === 'percentage') {
-            return (this.subtotal * this.discount.value) / 100;
-        }
-        return this.discount.value;
     }
 
     async refreshStockAlerts() {
@@ -673,11 +774,12 @@ class POSSystem {
     generateReceipt(sale, trxId) {
         const receiptEl = document.getElementById('receipt');
         const now = new Date().toLocaleString();
+        const taxPercent = (this.taxRate * 100).toFixed(0);
         
-        let itemsHtml = sale.items.map(item => `
+        let itemsHtml = sale.items.map((item, index) => `
             <tr>
-                <td style="padding: 5px 0;">${item.name}<br><small>${item.qty} x ${this.currency}${item.price.toFixed(2)}</small></td>
-                <td style="text-align: right; vertical-align: bottom;">${this.currency}${(item.price * item.qty).toFixed(2)}</td>
+                <td style="padding: 5px 0;">${index + 1}. ${item.name}<br><small>${item.qty} x ${this.formatPrice(item.price)}</small></td>
+                <td style="text-align: right; vertical-align: bottom;">${this.formatPrice(item.price * item.qty)}</td>
             </tr>
         `).join('');
 
@@ -692,6 +794,7 @@ class POSSystem {
                     <div>TRX: ${trxId}</div>
                     <div>Date: ${now}</div>
                     <div>Cust: ${sale.customer_name}</div>
+                    <div>Currency: ${sale.currency}</div>
                 </div>
                 
                 <table style="width: 100%; border-top: 1px dashed #000; border-bottom: 1px dashed #000; font-size: 0.8rem; margin-bottom: 15px;">
@@ -699,17 +802,17 @@ class POSSystem {
                 </table>
                 
                 <div style="font-size: 0.8rem;">
-                    <div style="display: flex; justify-content: space-between;"><span>Subtotal:</span><span>${this.currency}${sale.subtotal.toFixed(2)}</span></div>
-                    ${sale.discount_amount > 0 ? `<div style="display: flex; justify-content: space-between;"><span>Discount:</span><span>-${this.currency}${sale.discount_amount.toFixed(2)}</span></div>` : ''}
-                    <div style="display: flex; justify-content: space-between;"><span>Tax (5%):</span><span>${this.currency}${sale.tax_amount.toFixed(2)}</span></div>
+                    <div style="display: flex; justify-content: space-between;"><span>Subtotal:</span><span>${this.formatPrice(sale.subtotal)}</span></div>
+                    ${sale.discount_amount > 0 ? `<div style="display: flex; justify-content: space-between;"><span>Discount:</span><span>-${this.formatPrice(sale.discount_amount)}</span></div>` : ''}
+                    <div style="display: flex; justify-content: space-between;"><span>Tax (${taxPercent}%):</span><span>${this.formatPrice(sale.tax_amount)}</span></div>
                     <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1rem; margin-top: 5px; border-top: 1px solid #000; padding-top: 5px;">
-                        <span>TOTAL:</span><span>${this.currency}${sale.total_amount.toFixed(2)}</span>
+                        <span>TOTAL:</span><span>${this.formatPrice(sale.total_amount)}</span>
                     </div>
                 </div>
                 
                 <div style="margin-top: 15px; font-size: 0.8rem; text-align: center;">
                     <div>Payment: ${sale.payment_method.toUpperCase()}</div>
-                    ${sale.payment_method === 'cash' ? `<div>Change: ${this.currency}${(sale.amount_paid - sale.total_amount).toFixed(2)}</div>` : ''}
+                    ${sale.payment_method === 'cash' ? `<div>Change: ${this.formatPrice(sale.amount_paid - sale.total_amount)}</div>` : ''}
                 </div>
                 
                 <div style="text-align: center; margin-top: 30px; font-size: 0.8rem;">

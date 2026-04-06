@@ -123,10 +123,12 @@
                             <i class="fas fa-calendar-alt"></i>
                             Select Date
                         </button>
+                        <a href="{{ route('pos') }}">
                         <button class="btn btn-primary">
                             <i class="fas fa-plus"></i>
                             New Sale
                         </button>
+                        </a>
                     </div>
                 </div>
 
