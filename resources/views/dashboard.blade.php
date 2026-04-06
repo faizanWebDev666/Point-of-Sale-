@@ -201,14 +201,18 @@
                 </div>
 
                 <!-- Charts Section -->
-                <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); margin-top: 1.5rem;">
-                    <div class="table-card" style="padding: 1.5rem;">
-                        <h3 style="margin-bottom: 1rem;">Sales Revenue (Last 7 Days)</h3>
-                        <canvas id="salesChart" height="250"></canvas>
+                <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); margin-top: 1.5rem; gap: 1.5rem;">
+                    <div class="table-card" style="padding: 1.5rem; display: flex; flex-direction: column;">
+                        <h3 style="margin-bottom: 1.5rem; font-size: 1.1rem; font-weight: 700; color: #1e293b;">Sales Revenue (Last 7 Days)</h3>
+                        <div style="position: relative; height: 300px; width: 100%; flex: 1;">
+                            <canvas id="salesChart"></canvas>
+                        </div>
                     </div>
-                    <div class="table-card" style="padding: 1.5rem;">
-                        <h3 style="margin-bottom: 1rem;">Payment Methods</h3>
-                        <canvas id="paymentChart" height="250"></canvas>
+                    <div class="table-card" style="padding: 1.5rem; display: flex; flex-direction: column;">
+                        <h3 style="margin-bottom: 1.5rem; font-size: 1.1rem; font-weight: 700; color: #1e293b;">Payment Methods</h3>
+                        <div style="position: relative; height: 300px; width: 100%; flex: 1;">
+                            <canvas id="paymentChart"></canvas>
+                        </div>
                     </div>
                 </div>
 
@@ -265,52 +269,138 @@
 
     <script src="{{ asset('js/dashboard.js') }}"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        let salesChart, paymentChart;
+        
+        function initCharts() {
             const salesCtx = document.getElementById('salesChart');
             const paymentCtx = document.getElementById('paymentChart');
+            
+            if (!salesCtx && !paymentCtx) return;
+
+            // Use GlobalCurrency for formatting and rates
+            const currentCode = localStorage.getItem('pos_currency') || 'USD';
+            const currencies = {
+                'USD': { symbol: '$', rate: 1 },
+                'PKR': { symbol: 'Rs', rate: 280 }
+            };
+            const config = currencies[currentCode];
+            const rate = config.rate;
+            const symbol = config.symbol;
+
+            // Convert base sales data to current currency
+            const baseSalesData = {!! json_encode($charts['sales_data']) !!};
+            const currentSalesData = baseSalesData.map(v => v * rate);
 
             if (salesCtx) {
-                new Chart(salesCtx, {
+                if (salesChart) salesChart.destroy();
+                salesChart = new Chart(salesCtx, {
                     type: 'line',
                     data: {
                         labels: {!! json_encode($charts['sales_labels']) !!},
                         datasets: [{
                             label: 'Revenue',
-                            data: {!! json_encode($charts['sales_data']) !!},
+                            data: currentSalesData,
                             borderColor: '#800000',
-                            backgroundColor: 'rgba(128, 0, 0, 0.1)',
-                            borderWidth: 2,
+                            backgroundColor: 'rgba(128, 0, 0, 0.05)',
+                            borderWidth: 3,
                             fill: true,
-                            tension: 0.4
+                            tension: 0.4,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#800000',
+                            pointHoverRadius: 6
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         plugins: {
-                            legend: { display: false }
+                            legend: { display: false },
+                            tooltip: {
+                                padding: 12,
+                                backgroundColor: '#1e293b',
+                                titleFont: { size: 13 },
+                                bodyFont: { size: 13 },
+                                callbacks: {
+                                    label: function(context) {
+                                        return ' Revenue: ' + symbol + context.parsed.y.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                                    }
+                                }
+                            }
                         },
                         scales: {
-                            y: { beginAtZero: true }
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#f1f5f9' },
+                                ticks: {
+                                    font: { size: 11 },
+                                    callback: function(value) {
+                                        return symbol + value.toLocaleString();
+                                    }
+                                }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { size: 11 } }
+                            }
                         }
                     }
                 });
             }
 
             if (paymentCtx) {
-                new Chart(paymentCtx, {
+                if (paymentChart) paymentChart.destroy();
+                paymentChart = new Chart(paymentCtx, {
                     type: 'doughnut',
                     data: {
                         labels: {!! json_encode($charts['payment_labels']) !!},
                         datasets: [{
                             data: {!! json_encode($charts['payment_data']) !!},
-                            backgroundColor: ['#800000', '#2c3e50', '#27ae60', '#f39c12']
+                            backgroundColor: ['#800000', '#2c3e50', '#27ae60', '#f39c12'],
+                            borderWidth: 0,
+                            hoverOffset: 10
                         }]
                     },
                     options: {
                         responsive: true,
-                        maintainAspectRatio: false
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    padding: 25,
+                                    usePointStyle: true,
+                                    pointStyle: 'circle',
+                                    font: { size: 12, weight: '600' },
+                                    color: '#475569'
+                                }
+                            },
+                            tooltip: {
+                                padding: 12,
+                                backgroundColor: '#1e293b'
+                            }
+                        },
+                        cutout: '70%'
                     }
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initial load
+            initCharts();
+            
+            // Listen for currency changes from Settings page (via storage event)
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'pos_currency') {
+                    initCharts();
+                }
+            });
+
+            // Handle manual selector if it exists on this page
+            const selector = document.getElementById('globalCurrencySelect');
+            if (selector) {
+                selector.addEventListener('change', () => {
+                    setTimeout(initCharts, 50);
                 });
             }
         });

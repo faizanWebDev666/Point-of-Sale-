@@ -1057,7 +1057,7 @@ body {
     border-color: var(--primary-color);
 }
 
-/* Table Styling */
+/* Chart Cards */
 .table-card {
     background-color: var(--bg-white);
     border-radius: 12px;
@@ -1065,6 +1065,12 @@ body {
     border: 1px solid var(--border-color);
     overflow: hidden;
     transition: var(--transition);
+}
+
+.table-card h3 {
+    color: #1e293b;
+    font-size: 1.1rem;
+    font-weight: 700;
 }
 
 .table-card:hover {
