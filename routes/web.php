@@ -5,11 +5,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\POSController;
 
-Route::get('/', function () {
-    return view('welcome');
-});
 
-Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 Route::get('/products', [ProductController::class, 'products'])->name('products');
 Route::post('/products', [ProductController::class, 'store'])->name('products.store');
 

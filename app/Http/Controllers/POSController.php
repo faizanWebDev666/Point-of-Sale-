@@ -11,7 +11,6 @@ class POSController extends Controller
 {
     public function index()
     {
-        // For scalability, only load initial products (first 24)
         $products = Product::orderBy('name')->limit(24)->get();
         $categories = Product::select('category')->distinct()->pluck('category');
         $transactions = POSTransaction::orderBy('created_at', 'desc')->limit(10)->get();
@@ -54,7 +53,6 @@ class POSController extends Controller
                 'loyalty_points_earned' => (int)($validated['total_amount'] * 10), // 1 point per 10 cents
             ]);
 
-            // Update product stock
             foreach ($validated['items'] as $item) {
                 Product::where('id', $item['id'])->decrement('stock', $item['qty']);
             }
