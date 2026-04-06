@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ asset('css/pos.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intl-tel-input@21.0.8/build/css/intlTelInput.css">
 </head>
 <body>
     <!-- POS Header -->
@@ -18,22 +19,17 @@
             <div class="logo-box">
                 <i class="fas fa-bolt"></i>
             </div>
+            <a href="{{ route('dashboard') }}" style="text-decoration: none; color: inherit;">
             <div class="store-info">
                 <h1 class="store-name">RetailHub</h1>
                 <p class="store-subtitle">Smart POS Terminal</p>
             </div>
+            </a>
         </div>
         
         <div class="search-bar" style="max-width: 400px; margin: 0 1rem;">
             <i class="fas fa-search"></i>
             <input type="text" id="productSearch" placeholder="Search products (F4)..." autocomplete="off">
-        </div>
-
-        <div class="currency-selector" style="margin-right: 1rem;">
-            <select id="currencySelect" class="currency-dropdown">
-                <option value="USD">USD ($)</option>
-                <option value="PKR">PKR (₨)</option>
-            </select>
         </div>
 
         <div class="bill-info">
@@ -165,7 +161,10 @@
                         </div>
                         <div>
                             <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; margin-bottom: 0.5rem; display: block;">Phone Number</label>
-                            <input type="tel" id="checkoutCustomerPhone" placeholder="Optional" class="input-field">
+                            <input type="tel" id="checkoutCustomerPhone" class="input-field" list="phoneHistory">
+                            <datalist id="phoneHistory">
+                                <!-- History loaded via JS -->
+                            </datalist>
                         </div>
                     </div>
 
@@ -305,6 +304,8 @@
     <!-- Receipt Container (Hidden) -->
     <div id="receipt" class="receipt-container"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/intl-tel-input@21.0.8/build/js/intlTelInput.min.js"></script>
+    <script src="{{ asset('js/dashboard.js') }}"></script>
     <script src="{{ asset('js/pos.js') }}"></script>
 </body>
 </html>

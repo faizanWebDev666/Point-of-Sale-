@@ -7,14 +7,8 @@ class POSSystem {
         this.taxRate = 0; // Default to 0%
         this.billNumber = this.generateBillNumber();
         this.checkoutPaymentMethod = 'cash';
-        
-        // Configuration
-        this.currencies = {
-            'USD': { symbol: '$', rate: 1 },
-            'PKR': { symbol: 'Rs', rate: 280 } // Example rate
-        };
-        this.currentCurrency = localStorage.getItem('pos_currency') || 'USD';
-        this.currency = this.currencies[this.currentCurrency].symbol;
+        this.phoneInput = null;
+        this.customerHistory = JSON.parse(localStorage.getItem('pos_customer_history')) || [];
         
         this.init();
     }
@@ -25,13 +19,46 @@ class POSSystem {
         this.updateBillNumber();
         this.refreshStockAlerts();
         this.setupKeyboardShortcuts();
+        this.initPhoneInput();
         this.syncCurrencyUI();
         this.renderCart();
     }
 
+    initPhoneInput() {
+        const input = document.getElementById('checkoutCustomerPhone');
+        if (input && window.intlTelInput) {
+            this.phoneInput = window.intlTelInput(input, {
+                initialCountry: "pk",
+                separateDialCode: true,
+                utilsScript: "https://cdn.jsdelivr.net/npm/intl-tel-input@21.0.8/build/js/utils.js",
+                autoPlaceholder: "aggressive",
+                preferredCountries: ["pk", "ae", "sa", "gb", "us"]
+            });
+
+            // Update history on input
+            input.addEventListener('input', () => this.updatePhoneHistoryDatalist(input.value));
+            
+            // Handle history selection
+            input.addEventListener('change', () => {
+                const customer = this.customerHistory.find(c => c.phone === input.value);
+                if (customer) {
+                    document.getElementById('checkoutCustomerName').value = customer.name;
+                }
+            });
+        }
+    }
+
+    updatePhoneHistoryDatalist(query) {
+        const datalist = document.getElementById('phoneHistory');
+        if (!datalist) return;
+
+        const filtered = this.customerHistory.filter(c => c.phone.includes(query)).slice(0, 5);
+        datalist.innerHTML = filtered.map(c => `<option value="${c.phone}">${c.name}</option>`).join('');
+    }
+
     syncCurrencyUI() {
         if (this.currencySelect) {
-            this.currencySelect.value = this.currentCurrency;
+            this.currencySelect.value = GlobalCurrency.current;
         }
         this.updateDiscountLabel();
         this.updateUIPrices();
@@ -40,7 +67,7 @@ class POSSystem {
     updateDiscountLabel() {
         const label = document.getElementById('discountFixedLabel');
         if (label) {
-            label.textContent = `Fixed Amount Discount (${this.currentCurrency})`;
+            label.textContent = `Fixed Amount Discount (${GlobalCurrency.current})`;
         }
     }
 
@@ -49,7 +76,7 @@ class POSSystem {
         this.productGrid = document.getElementById('productGrid');
         this.cartItemsList = document.getElementById('cartItems');
         this.productSearch = document.getElementById('productSearch');
-        this.currencySelect = document.getElementById('currencySelect');
+        this.currencySelect = document.getElementById('globalCurrencySelect');
         this.toastContainer = document.getElementById('toastContainer');
         
         // Modals
@@ -80,31 +107,51 @@ class POSSystem {
     }
 
     attachEventListeners() {
-        // Product Interaction
-        document.querySelectorAll('.product-card').forEach(card => {
-            card.addEventListener('click', () => this.addToCart(card));
-        });
+        // Product Interaction - Use delegation to handle dynamically rendered products
+        if (this.productGrid) {
+            this.productGrid.addEventListener('click', (e) => {
+                const card = e.target.closest('.product-card');
+                if (card) {
+                    this.addToCart(card);
+                }
+            });
+        }
 
         // Search & Filter
-        this.productSearch.addEventListener('input', (e) => this.filterProducts(e.target.value));
+        if (this.productSearch) {
+            this.productSearch.addEventListener('input', (e) => this.filterProducts(e.target.value));
+        }
         
         // Currency Selector
-        this.currencySelect.addEventListener('change', (e) => this.switchCurrency(e.target.value));
+        if (this.currencySelect) {
+            this.currencySelect.addEventListener('change', (e) => this.switchCurrency(e.target.value));
+        }
         
         document.querySelectorAll('.category-tab').forEach(tab => {
             tab.addEventListener('click', () => this.filterByCategory(tab));
         });
 
         // Cart Actions
-        this.clearCartBtn.addEventListener('click', () => this.confirmClearCart());
+        if (this.clearCartBtn) {
+            this.clearCartBtn.addEventListener('click', () => this.confirmClearCart());
+        }
         
         // Checkout
-        this.completeSaleBtn.addEventListener('click', () => this.openCheckout());
-        this.checkoutForm.addEventListener('submit', (e) => this.handleCheckoutSubmit(e));
-        this.checkoutAmountPaid.addEventListener('input', () => this.calculateCheckoutChange());
+        if (this.completeSaleBtn) {
+            this.completeSaleBtn.addEventListener('click', () => this.openCheckout());
+        }
+        if (this.checkoutForm) {
+            this.checkoutForm.addEventListener('submit', (e) => this.handleCheckoutSubmit(e));
+        }
+        if (this.checkoutAmountPaid) {
+            this.checkoutAmountPaid.addEventListener('input', () => this.calculateCheckoutChange());
+        }
 
         // More Options
-        document.getElementById('toggleMoreOptionsBtn').addEventListener('click', () => this.openModal(this.moreOptionsModal));
+        const toggleBtn = document.getElementById('toggleMoreOptionsBtn');
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => this.openModal(this.moreOptionsModal));
+        }
     }
 
     setupKeyboardShortcuts() {
@@ -112,12 +159,12 @@ class POSSystem {
             // F2: Checkout
             if (e.key === 'F2') {
                 e.preventDefault();
-                if (!this.completeSaleBtn.disabled) this.openCheckout();
+                if (this.completeSaleBtn && !this.completeSaleBtn.disabled) this.openCheckout();
             }
             // F4: Search focus
             if (e.key === 'F4') {
                 e.preventDefault();
-                this.productSearch.focus();
+                if (this.productSearch) this.productSearch.focus();
             }
             // Escape: Close modals
             if (e.key === 'Escape') {
@@ -126,42 +173,45 @@ class POSSystem {
         });
 
         // Barcode scanner support (Enter key in search)
-        this.productSearch.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.handleBarcodeScan(this.productSearch.value);
-            }
-        });
+        if (this.productSearch) {
+            this.productSearch.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.handleBarcodeScan(this.productSearch.value);
+                }
+            });
+        }
     }
 
     switchCurrency(currencyCode) {
-        if (!this.currencies[currencyCode]) return;
-        
-        this.currentCurrency = currencyCode;
-        this.currency = this.currencies[currencyCode].symbol;
-        localStorage.setItem('pos_currency', currencyCode);
-        
-        this.updateDiscountLabel();
-        this.updateUIPrices();
-        this.showToast(`Switched to ${currencyCode}`, 'info');
+        GlobalCurrency.switch(currencyCode);
     }
 
     updateUIPrices() {
-        // 1. Update Product Grid (from DOM data)
+        // 1. Update Product Grid
         document.querySelectorAll('.product-card').forEach(card => {
             const basePrice = parseFloat(card.dataset.price);
-            const convertedPrice = this.formatPrice(basePrice);
-            card.querySelector('.product-price').textContent = convertedPrice;
+            if (!isNaN(basePrice)) {
+                const convertedPrice = this.formatPrice(basePrice);
+                const priceEl = card.querySelector('.product-price');
+                if (priceEl) priceEl.textContent = convertedPrice;
+            }
         });
 
-        // 2. Update Cart (re-render uses this.currency)
+        // 2. Update Cart
         this.renderCart();
     }
 
     formatPrice(amount, isBase = true) {
-        const rate = isBase ? this.currencies[this.currentCurrency].rate : 1;
-        const converted = amount * rate;
-        return `${this.currency}${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        return GlobalCurrency.format(amount, isBase);
+    }
+
+    get currency() {
+        return GlobalCurrency.currencies[GlobalCurrency.current].symbol;
+    }
+
+    get currentCurrency() {
+        return GlobalCurrency.current;
     }
 
     async handleBarcodeScan(sku) {
@@ -266,7 +316,7 @@ class POSSystem {
         if (this.cart.length === 0) return;
         if (confirm('Are you sure you want to clear the cart?')) {
             this.cart = [];
-            this.discount = { type: 'percentage', value: 0 };
+            this.discounts = { fixed: 0, percentage: 0 };
             this.renderCart();
             this.showToast('Cart cleared', 'info');
         }
@@ -308,6 +358,7 @@ class POSSystem {
     }
 
     renderProductGrid(products) {
+        if (!this.productGrid) return;
         this.productGrid.innerHTML = products.map(p => {
             let icon = 'fa-box';
             const cat = p.category ? p.category.toLowerCase() : '';
@@ -323,14 +374,13 @@ class POSSystem {
                      data-price="${p.price}" 
                      data-sku="${p.sku}" 
                      data-category="${cat}" 
-                     data-stock="${p.stock}"
-                     onclick="pos.addToCart(this)">
+                     data-stock="${p.stock}">
                     <div class="product-img">
                         <i class="fas ${icon}"></i>
                     </div>
                     <div class="product-info">
                         <div class="product-name">${p.name}</div>
-                        <div class="product-price">${this.formatPrice(parseFloat(p.price))}</div>
+                        <div class="product-price" data-base-price="${p.price}">${this.formatPrice(parseFloat(p.price))}</div>
                         <div class="product-stock">Stock: ${p.stock}</div>
                     </div>
                     ${p.stock <= 5 && p.stock > 0 ? '<span class="stock-warning" title="Low Stock"></span>' : ''}
@@ -345,7 +395,7 @@ class POSSystem {
         tab.classList.add('active');
         
         const category = tab.dataset.category;
-        const query = this.productSearch.value;
+        const query = this.productSearch ? this.productSearch.value : '';
 
         // Fetch filtered products from API
         try {
@@ -360,14 +410,15 @@ class POSSystem {
     // --- UI Rendering ---
 
     renderCart() {
+        if (!this.cartItemsList) return;
         if (this.cart.length === 0) {
             this.cartItemsList.innerHTML = `
                 <div style="text-align:center; padding: 4rem 2rem; color: var(--text-light);">
                     <i class="fas fa-shopping-basket" style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.2;"></i>
                     <p>Cart is empty</p>
                 </div>`;
-            this.completeSaleBtn.disabled = true;
-            this.updateSummary(0);
+            if (this.completeSaleBtn) this.completeSaleBtn.disabled = true;
+            this.updateSummary();
             return;
         }
 
@@ -397,17 +448,11 @@ class POSSystem {
             `;
         }).join('');
 
-        this.completeSaleBtn.disabled = false;
+        if (this.completeSaleBtn) this.completeSaleBtn.disabled = false;
         this.updateSummary();
     }
 
     updateSummary() {
-        // Calculation Order:
-        // 1. Start with Subtotal
-        // 2. Subtract Fixed Discount
-        // 3. Subtract Percentage Discount (calculated from the amount remaining after fixed discount)
-        // 4. Apply Tax to the final taxable amount
-        
         const fixedDiscount = this.discounts.fixed || 0;
         const subtotalAfterFixed = Math.max(0, this.subtotal - fixedDiscount);
         
@@ -424,31 +469,36 @@ class POSSystem {
             taxLabel.textContent = `Tax (${(this.taxRate * 100).toFixed(0)}%)`;
         }
 
-        this.summaryElements.subtotal.textContent = this.formatPrice(this.subtotal);
-        this.summaryElements.tax.textContent = this.formatPrice(tax);
-        this.summaryElements.total.textContent = this.formatPrice(total);
+        if (this.summaryElements.subtotal) this.summaryElements.subtotal.textContent = this.formatPrice(this.subtotal);
+        if (this.summaryElements.tax) this.summaryElements.tax.textContent = this.formatPrice(tax);
+        if (this.summaryElements.total) this.summaryElements.total.textContent = this.formatPrice(total);
 
         const discRow = document.getElementById('discountRow');
-        if (totalDiscount > 0) {
-            discRow.style.display = 'flex';
-            this.summaryElements.discount.textContent = `-${this.formatPrice(totalDiscount)}`;
-        } else {
-            discRow.style.display = 'none';
+        if (discRow) {
+            if (totalDiscount > 0) {
+                discRow.style.display = 'flex';
+                if (this.summaryElements.discount) this.summaryElements.discount.textContent = `-${this.formatPrice(totalDiscount)}`;
+            } else {
+                discRow.style.display = 'none';
+            }
         }
     }
 
     // --- Checkout Logic ---
 
     openCheckout() {
+        if (!this.summaryElements.total) return;
         const totalStr = this.summaryElements.total.textContent.replace(this.currency, '').replace(/,/g, '');
         const total = parseFloat(totalStr);
-        this.checkoutTotal.textContent = this.formatPrice(total, false);
-        this.checkoutAmountPaid.value = '';
+        if (this.checkoutTotal) this.checkoutTotal.textContent = this.formatPrice(total, false);
+        if (this.checkoutAmountPaid) this.checkoutAmountPaid.value = '';
         this.calculateCheckoutChange();
         this.openModal(this.checkoutModal);
         
         // Focus amount paid field for quick entry
-        setTimeout(() => this.checkoutAmountPaid.focus(), 100);
+        setTimeout(() => {
+            if (this.checkoutAmountPaid) this.checkoutAmountPaid.focus();
+        }, 100);
     }
 
     selectCheckoutPaymentMethod(el) {
@@ -458,15 +508,18 @@ class POSSystem {
         
         const cashSection = document.getElementById('checkoutCashSection');
         if (this.checkoutPaymentMethod === 'cash') {
-            cashSection.style.display = 'block';
+            if (cashSection) cashSection.style.display = 'block';
         } else {
-            cashSection.style.display = 'none';
-            this.checkoutAmountPaid.value = this.summaryElements.total.textContent.replace(this.currency, '');
+            if (cashSection) cashSection.style.display = 'none';
+            if (this.checkoutAmountPaid && this.summaryElements.total) {
+                this.checkoutAmountPaid.value = this.summaryElements.total.textContent.replace(this.currency, '').replace(/,/g, '');
+            }
             this.calculateCheckoutChange();
         }
     }
 
     calculateCheckoutChange() {
+        if (!this.checkoutTotal || !this.checkoutAmountPaid || !this.checkoutChange) return;
         const total = parseFloat(this.checkoutTotal.textContent.replace(this.currency, '').replace(/,/g, ''));
         const paid = parseFloat(this.checkoutAmountPaid.value) || 0;
         const change = paid - total;
@@ -475,17 +528,18 @@ class POSSystem {
         if (paid < total && this.checkoutPaymentMethod === 'cash') {
             changeEl.textContent = 'Short: ' + this.formatPrice(total - paid, false);
             changeEl.style.color = 'var(--danger-color)';
-            this.checkoutSubmitBtn.disabled = true;
+            if (this.checkoutSubmitBtn) this.checkoutSubmitBtn.disabled = true;
         } else {
             changeEl.textContent = this.formatPrice(Math.max(0, change), false);
             changeEl.style.color = 'var(--success-color)';
-            this.checkoutSubmitBtn.disabled = false;
+            if (this.checkoutSubmitBtn) this.checkoutSubmitBtn.disabled = false;
         }
     }
 
     async handleCheckoutSubmit(e) {
         e.preventDefault();
-        
+        if (!this.checkoutTotal || !this.checkoutAmountPaid) return;
+
         const totalStr = this.checkoutTotal.textContent.replace(this.currency, '').replace(/,/g, '');
         const total = parseFloat(totalStr);
         const paid = parseFloat(this.checkoutAmountPaid.value) || total;
@@ -495,22 +549,36 @@ class POSSystem {
         const percentageDiscount = (subtotalAfterFixed * (this.discounts.percentage || 0)) / 100;
         const totalDiscount = fixedDiscount + percentageDiscount;
 
+        const customerName = document.getElementById('checkoutCustomerName').value || 'Walk-in Customer';
+        let customerPhone = document.getElementById('checkoutCustomerPhone').value;
+        
+        if (this.phoneInput) {
+            customerPhone = this.phoneInput.getNumber();
+        }
+
+        if (customerPhone && customerName !== 'Walk-in Customer') {
+            this.saveToCustomerHistory(customerName, customerPhone);
+        }
+
+        const rate = GlobalCurrency.currencies[GlobalCurrency.current].rate;
         const saleData = {
             items: this.cart,
             subtotal: this.subtotal,
             discount_amount: totalDiscount,
-            tax_amount: parseFloat(this.summaryElements.tax.textContent.replace(this.currency, '').replace(/,/g, '')) / this.currencies[this.currentCurrency].rate,
-            total_amount: total / this.currencies[this.currentCurrency].rate,
+            tax_amount: parseFloat(this.summaryElements.tax.textContent.replace(this.currency, '').replace(/,/g, '')) / rate,
+            total_amount: total / rate,
             payment_method: this.checkoutPaymentMethod,
-            amount_paid: paid / this.currencies[this.currentCurrency].rate,
-            currency: this.currentCurrency,
-            customer_name: document.getElementById('checkoutCustomerName').value || 'Walk-in Customer',
-            customer_phone: document.getElementById('checkoutCustomerPhone').value || null,
+            amount_paid: paid / rate,
+            currency: GlobalCurrency.current,
+            customer_name: customerName,
+            customer_phone: customerPhone || null,
         };
 
         try {
-            this.checkoutSubmitBtn.disabled = true;
-            this.checkoutSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            if (this.checkoutSubmitBtn) {
+                this.checkoutSubmitBtn.disabled = true;
+                this.checkoutSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            }
 
             const response = await fetch('/api/pos/save-sale', {
                 method: 'POST',
@@ -533,8 +601,10 @@ class POSSystem {
             }
         } catch (error) {
             this.showToast(error.message, 'danger');
-            this.checkoutSubmitBtn.disabled = false;
-            this.checkoutSubmitBtn.innerHTML = 'Confirm & Print';
+            if (this.checkoutSubmitBtn) {
+                this.checkoutSubmitBtn.disabled = false;
+                this.checkoutSubmitBtn.innerHTML = 'Confirm & Print';
+            }
         }
     }
 
@@ -542,33 +612,35 @@ class POSSystem {
 
     toggleDiscountSection() {
         this.closeModal(this.moreOptionsModal);
-        
-        // Convert the internal base (USD) discount to current currency for display
-        const rate = this.currencies[this.currentCurrency].rate;
+        const rate = GlobalCurrency.currencies[GlobalCurrency.current].rate;
         const currentFixed = (this.discounts.fixed || 0) * rate;
         
-        document.getElementById('discountFixed').value = currentFixed.toFixed(2);
-        document.getElementById('discountPercent').value = this.discounts.percentage || 0;
+        const fixedInput = document.getElementById('discountFixed');
+        const percentInput = document.getElementById('discountPercent');
+        if (fixedInput) fixedInput.value = currentFixed.toFixed(2);
+        if (percentInput) percentInput.value = this.discounts.percentage || 0;
         this.openModal(this.discountModal);
     }
 
     toggleTaxSection() {
         this.closeModal(this.moreOptionsModal);
-        document.getElementById('taxValue').value = (this.taxRate * 100).toFixed(0);
+        const taxInput = document.getElementById('taxValue');
+        if (taxInput) taxInput.value = (this.taxRate * 100).toFixed(0);
         this.openModal(this.taxModal);
     }
 
     applyDiscount() {
-        const enteredFixed = parseFloat(document.getElementById('discountFixed').value) || 0;
-        const percent = parseFloat(document.getElementById('discountPercent').value) || 0;
+        const fixedVal = document.getElementById('discountFixed').value;
+        const percentVal = document.getElementById('discountPercent').value;
+        const enteredFixed = parseFloat(fixedVal) || 0;
+        const percent = parseFloat(percentVal) || 0;
 
         if (percent > 100) {
             this.showToast('Invalid percentage', 'warning');
             return;
         }
 
-        // Convert the entered amount from current currency to internal base (USD)
-        const rate = this.currencies[this.currentCurrency].rate;
+        const rate = GlobalCurrency.currencies[GlobalCurrency.current].rate;
         const fixedUSD = enteredFixed / rate;
 
         this.discounts = { fixed: fixedUSD, percentage: percent };
@@ -579,12 +651,10 @@ class POSSystem {
 
     applyTax() {
         const val = parseFloat(document.getElementById('taxValue').value) || 0;
-
         if (val < 0) {
             this.showToast('Invalid tax percentage', 'warning');
             return;
         }
-
         this.taxRate = val / 100;
         this.updateSummary();
         this.closeModal(this.taxModal);
@@ -682,6 +752,7 @@ class POSSystem {
     // --- Utility Methods ---
 
     showToast(msg, type = 'dark') {
+        if (!this.toastContainer) return;
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         
@@ -700,17 +771,19 @@ class POSSystem {
     }
 
     showInfoModal(content, title = 'Information') {
-        document.getElementById('infoModalTitle').textContent = title;
-        document.getElementById('infoModalContent').innerHTML = content;
+        const titleEl = document.getElementById('infoModalTitle');
+        const contentEl = document.getElementById('infoModalContent');
+        if (titleEl) titleEl.textContent = title;
+        if (contentEl) contentEl.innerHTML = content;
         this.openModal(this.infoModal);
     }
 
     openModal(modal) {
-        modal.classList.add('active');
+        if (modal) modal.classList.add('active');
     }
 
     closeModal(modal) {
-        modal.classList.remove('active');
+        if (modal) modal.classList.remove('active');
     }
 
     closeAllModals() {
@@ -727,9 +800,12 @@ class POSSystem {
         this.refreshStockAlerts();
         
         // Reset inputs
-        document.getElementById('checkoutCustomerName').value = '';
-        document.getElementById('checkoutCustomerPhone').value = '';
-        document.getElementById('discountValue').value = '';
+        const custName = document.getElementById('checkoutCustomerName');
+        const custPhone = document.getElementById('checkoutCustomerPhone');
+        const discVal = document.getElementById('discountValue');
+        if (custName) custName.value = '';
+        if (custPhone) custPhone.value = '';
+        if (discVal) discVal.value = '';
     }
 
     generateBillNumber() {
@@ -739,7 +815,23 @@ class POSSystem {
     }
 
     updateBillNumber() {
-        document.getElementById('billNumber').textContent = 'Bill #' + this.billNumber;
+        const el = document.getElementById('billNumber');
+        if (el) el.textContent = 'Bill #' + this.billNumber;
+    }
+
+    saveToCustomerHistory(name, phone) {
+        const index = this.customerHistory.findIndex(c => c.phone === phone);
+        if (index !== -1) {
+            this.customerHistory[index].name = name;
+        } else {
+            this.customerHistory.push({ name, phone });
+        }
+        
+        if (this.customerHistory.length > 100) {
+            this.customerHistory.shift();
+        }
+        
+        localStorage.setItem('pos_customer_history', JSON.stringify(this.customerHistory));
     }
 
     async refreshStockAlerts() {
@@ -750,6 +842,8 @@ class POSSystem {
             const outEl = document.getElementById('outOfStockAlert');
             const lowEl = document.getElementById('lowStockAlert');
             
+            if (!container || !outEl || !lowEl) return;
+
             let hasAlert = false;
             if (data.out_of_stock.length > 0) {
                 outEl.innerHTML = `<i class="fas fa-times-circle"></i> ${data.out_of_stock.length} out of stock`;
@@ -773,6 +867,7 @@ class POSSystem {
 
     generateReceipt(sale, trxId) {
         const receiptEl = document.getElementById('receipt');
+        if (!receiptEl) return;
         const now = new Date().toLocaleString();
         const taxPercent = (this.taxRate * 100).toFixed(0);
         

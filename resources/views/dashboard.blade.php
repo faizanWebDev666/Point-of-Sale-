@@ -6,6 +6,9 @@
     <title>POS Dashboard - Modern Store Management</title>
     <link rel="stylesheet" href="{{ asset('css/dashboard.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body>
     <div class="container">
@@ -92,7 +95,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link" data-section="settings">
+                            <a href="{{ route('settings') }}" class="nav-link" data-section="settings">
                                 <span class="nav-icon">
                                     <i class="fas fa-cog"></i>
                                 </span>
@@ -137,20 +140,17 @@
                     <!-- Total Sales Card -->
                     <div class="summary-card">
                         <div class="card-header">
-                            <h3 class="card-title">Total Sales</h3>
+                            <h3 class="card-title">Total Revenue</h3>
                             <i class="fas fa-dollar-sign card-icon"></i>
                         </div>
                         <div class="card-body">
-                            <div class="card-value">$12,450.50</div>
+                            <div class="card-value" id="totalRevenue" data-base-price="{{ $stats['total_revenue'] }}">{{ $stats['total_revenue'] }}</div>
                             <div class="card-meta">
-                                <span class="meta-badge positive">
-                                    <i class="fas fa-arrow-up"></i> 12.5%
+                                <span class="meta-badge {{ $stats['revenue_growth'] >= 0 ? 'positive' : 'negative' }}">
+                                    <i class="fas fa-arrow-{{ $stats['revenue_growth'] >= 0 ? 'up' : 'down' }}"></i> {{ abs($stats['revenue_growth']) }}%
                                 </span>
                                 <span class="meta-text">vs. yesterday</span>
                             </div>
-                        </div>
-                        <div class="card-footer">
-                            <small>Updated 5 minutes ago</small>
                         </div>
                     </div>
 
@@ -158,60 +158,57 @@
                     <div class="summary-card">
                         <div class="card-header">
                             <h3 class="card-title">Today's Orders</h3>
-                            <i class="fas fa-shopping-bag card-icon"></i>
+                            <i class="fas fa-shopping-cart card-icon"></i>
                         </div>
                         <div class="card-body">
-                            <div class="card-value">247</div>
+                            <div class="card-value">{{ $stats['today_orders'] }}</div>
                             <div class="card-meta">
-                                <span class="meta-badge positive">
-                                    <i class="fas fa-arrow-up"></i> 8.2%
+                                <span class="meta-badge {{ $stats['orders_growth'] >= 0 ? 'positive' : 'negative' }}">
+                                    <i class="fas fa-arrow-{{ $stats['orders_growth'] >= 0 ? 'up' : 'down' }}"></i> {{ abs($stats['orders_growth']) }}%
                                 </span>
                                 <span class="meta-text">vs. yesterday</span>
                             </div>
                         </div>
-                        <div class="card-footer">
-                            <small>Updated 2 minutes ago</small>
-                        </div>
                     </div>
 
                     <!-- Low Stock Alerts Card -->
-                    <div class="summary-card alert-card">
+                    <div class="summary-card">
                         <div class="card-header">
-                            <h3 class="card-title">Low Stock Alerts</h3>
+                            <h3 class="card-title">Low Stock</h3>
                             <i class="fas fa-exclamation-triangle card-icon"></i>
                         </div>
                         <div class="card-body">
-                            <div class="card-value alert-value">5</div>
+                            <div class="card-value {{ $stats['low_stock_count'] > 0 ? 'text-danger' : '' }}">{{ $stats['low_stock_count'] }}</div>
                             <div class="card-meta">
-                                <span class="meta-badge negative">
-                                    <i class="fas fa-arrow-down"></i> 2 critical
-                                </span>
-                                <span class="meta-text">Requires attention</span>
+                                <span class="meta-text">Items needing restock</span>
                             </div>
-                        </div>
-                        <div class="card-footer">
-                            <a href="#" class="footer-link">View Details →</a>
                         </div>
                     </div>
 
-                    <!-- Revenue Card -->
+                    <!-- Avg Order Value Card -->
                     <div class="summary-card">
                         <div class="card-header">
-                            <h3 class="card-title">Today's Revenue</h3>
+                            <h3 class="card-title">Avg. Order</h3>
                             <i class="fas fa-chart-pie card-icon"></i>
                         </div>
                         <div class="card-body">
-                            <div class="card-value">$9,856.25</div>
+                            <div class="card-value" data-base-price="{{ $stats['avg_order_value'] }}">{{ $stats['avg_order_value'] }}</div>
                             <div class="card-meta">
-                                <span class="meta-badge positive">
-                                    <i class="fas fa-arrow-up"></i> 5.3%
-                                </span>
-                                <span class="meta-text">Net after costs</span>
+                                <span class="meta-text">Per transaction</span>
                             </div>
                         </div>
-                        <div class="card-footer">
-                            <small>Updated 3 minutes ago</small>
-                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); margin-top: 1.5rem;">
+                    <div class="table-card" style="padding: 1.5rem;">
+                        <h3 style="margin-bottom: 1rem;">Sales Revenue (Last 7 Days)</h3>
+                        <canvas id="salesChart" height="250"></canvas>
+                    </div>
+                    <div class="table-card" style="padding: 1.5rem;">
+                        <h3 style="margin-bottom: 1rem;">Payment Methods</h3>
+                        <canvas id="paymentChart" height="250"></canvas>
                     </div>
                 </div>
 
@@ -224,30 +221,16 @@
                             <a href="#" class="view-all-link">View All →</a>
                         </div>
                         <div class="transactions-list">
+                            @foreach($recentTransactions as $trx)
                             <div class="transaction-item">
                                 <div class="transaction-info">
-                                    <p class="transaction-customer">Sarah Johnson</p>
-                                    <p class="transaction-desc">Order #12047</p>
+                                    <p class="transaction-customer">{{ $trx->customer_name ?? 'Walk-in Customer' }}</p>
+                                    <p class="transaction-desc">#{{ $trx->transaction_id }}</p>
                                 </div>
-                                <div class="transaction-amount">$245.99</div>
-                                <span class="transaction-status completed">Completed</span>
+                                <div class="transaction-amount" data-base-price="{{ $trx->total_amount }}">{{ $trx->total_amount }}</div>
+                                <span class="transaction-status {{ strtolower($trx->status) }}">{{ $trx->status }}</span>
                             </div>
-                            <div class="transaction-item">
-                                <div class="transaction-info">
-                                    <p class="transaction-customer">Mike Wilson</p>
-                                    <p class="transaction-desc">Order #12046</p>
-                                </div>
-                                <div class="transaction-amount">$189.50</div>
-                                <span class="transaction-status completed">Completed</span>
-                            </div>
-                            <div class="transaction-item">
-                                <div class="transaction-info">
-                                    <p class="transaction-customer">Emma Davis</p>
-                                    <p class="transaction-desc">Order #12045</p>
-                                </div>
-                                <div class="transaction-amount">$325.00</div>
-                                <span class="transaction-status pending">Pending</span>
-                            </div>
+                            @endforeach
                         </div>
                     </div>
 
@@ -258,30 +241,16 @@
                             <a href="#" class="view-all-link">View All →</a>
                         </div>
                         <div class="products-list">
+                            @foreach($topProducts as $product)
                             <div class="product-item">
                                 <div class="product-info">
-                                    <p class="product-name">Wireless Headphones</p>
-                                    <p class="product-sku">SKU: WH-2024</p>
+                                    <p class="product-name">{{ $product['name'] }}</p>
+                                    <p class="product-sku">SKU: {{ $product['sku'] }}</p>
                                 </div>
-                                <div class="product-sales">45 units</div>
-                                <span class="product-badge">$89.99</span>
+                                <div class="product-sales">{{ $product['total_qty'] }} units</div>
+                                <span class="product-badge" data-base-price="{{ $product['price'] }}">{{ $product['price'] }}</span>
                             </div>
-                            <div class="product-item">
-                                <div class="product-info">
-                                    <p class="product-name">USB-C Cable</p>
-                                    <p class="product-sku">SKU: UC-1234</p>
-                                </div>
-                                <div class="product-sales">112 units</div>
-                                <span class="product-badge">$12.99</span>
-                            </div>
-                            <div class="product-item">
-                                <div class="product-info">
-                                    <p class="product-name">Phone Case Premium</p>
-                                    <p class="product-sku">SKU: PC-5678</p>
-                                </div>
-                                <div class="product-sales">78 units</div>
-                                <span class="product-badge">$24.99</span>
-                            </div>
+                            @endforeach
                         </div>
                     </div>
                 </div>
@@ -295,5 +264,56 @@
     </button>
 
     <script src="{{ asset('js/dashboard.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const salesCtx = document.getElementById('salesChart');
+            const paymentCtx = document.getElementById('paymentChart');
+
+            if (salesCtx) {
+                new Chart(salesCtx, {
+                    type: 'line',
+                    data: {
+                        labels: {!! json_encode($charts['sales_labels']) !!},
+                        datasets: [{
+                            label: 'Revenue',
+                            data: {!! json_encode($charts['sales_data']) !!},
+                            borderColor: '#800000',
+                            backgroundColor: 'rgba(128, 0, 0, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+            }
+
+            if (paymentCtx) {
+                new Chart(paymentCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: {!! json_encode($charts['payment_labels']) !!},
+                        datasets: [{
+                            data: {!! json_encode($charts['payment_data']) !!},
+                            backgroundColor: ['#800000', '#2c3e50', '#27ae60', '#f39c12']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

@@ -9,6 +9,10 @@ use App\Http\Controllers\POSController;
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 Route::get('/products', [ProductController::class, 'products'])->name('products');
 Route::post('/products', [ProductController::class, 'store'])->name('products.store');
+Route::put('/products/{id}', [ProductController::class, 'update'])->name('products.update');
+Route::delete('/products/{id}', [ProductController::class, 'destroy'])->name('products.destroy');
+
+Route::get('/settings', [ProductController::class, 'settings'])->name('settings');
 
 // POS Routes
 Route::get('/pos', [POSController::class, 'index'])->name('pos');

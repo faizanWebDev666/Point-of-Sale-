@@ -89,7 +89,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a href="#" class="nav-link" data-section="settings">
+                            <a href="{{ route('settings') }}" class="nav-link" data-section="settings">
                                 <span class="nav-icon">
                                     <i class="fas fa-cog"></i>
                                 </span>
@@ -195,15 +195,28 @@
                                                 <span class="stock-label">units</span>
                                             </div>
                                         </td>
-                                        <td><span class="price-value">${{ number_format($product->price, 2) }}</span></td>
+                                        <td><span class="price-value" data-base-price="{{ $product->price }}">${{ number_format($product->price, 2) }}</span></td>
                                         <td>
                                             <div class="action-buttons">
-                                                <button class="action-btn edit-btn" title="Edit Product">
+                                                <button class="action-btn edit-btn" 
+                                                        data-id="{{ $product->id }}" 
+                                                        data-name="{{ $product->name }}" 
+                                                        data-sku="{{ $product->sku }}" 
+                                                        data-category="{{ $product->category }}" 
+                                                        data-price="{{ $product->price }}" 
+                                                        data-stock="{{ $product->stock }}" 
+                                                        data-min_stock="{{ $product->min_stock }}" 
+                                                        data-description="{{ $product->description }}" 
+                                                        title="Edit Product">
                                                     <i class="fas fa-edit"></i>
                                                 </button>
-                                                <button class="action-btn delete-btn" title="Delete Product">
-                                                    <i class="fas fa-trash-alt"></i>
-                                                </button>
+                                                <form action="{{ route('products.destroy', $product->id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this product?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="action-btn delete-btn" title="Delete Product">
+                                                        <i class="fas fa-trash-alt"></i>
+                                                    </button>
+                                                </form>
                                             </div>
                                         </td>
                                     </tr>
@@ -236,8 +249,9 @@
                 <h3>Add New Product</h3>
                 <button class="close-modal" id="closeModal">&times;</button>
             </div>
-            <form id="addProductForm" action="{{ route('products.store') }}" method="POST">
+            <form id="productForm" action="{{ route('products.store') }}" method="POST">
                 @csrf
+                <div id="methodField"></div>
                 <div class="modal-body">
                     <div class="form-row">
                         <div class="form-group">
@@ -261,8 +275,9 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="price">Price ($)</label>
+                            <label for="price">Price (<span class="current-currency-symbol">$</span>)</label>
                             <input type="number" id="price" name="price" step="0.01" placeholder="0.00" required>
+                            <input type="hidden" name="base_price" id="base_price">
                         </div>
                     </div>
                     <div class="form-row">
@@ -288,6 +303,7 @@
         </div>
     </div>
 
+    <script src="{{ asset('js/dashboard.js') }}"></script>
     <script src="{{ asset('js/products.js') }}"></script>
 </body>
 </html>

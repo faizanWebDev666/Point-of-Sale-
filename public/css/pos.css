@@ -584,6 +584,24 @@ body {
     box-shadow: 0 0 0 3px rgba(128, 0, 0, 0.1);
 }
 
+/* Intl-Tel-Input Styling */
+.iti {
+    width: 100%;
+}
+
+.iti__flag-container {
+    border-radius: 6px 0 0 6px;
+}
+
+.iti__selected-flag {
+    background-color: var(--bg-gray) !important;
+    border-right: 1px solid var(--border-color);
+}
+
+#checkoutCustomerPhone {
+    padding-left: 52px !important;
+}
+
 /* Toast Notification */
 .toast-container {
     position: fixed;
